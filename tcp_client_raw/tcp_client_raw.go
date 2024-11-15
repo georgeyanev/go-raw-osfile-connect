@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"os"
@@ -18,7 +17,7 @@ var (
 
 func main() {
 	// create socket
-	for i := 0; i < 10000; i++ {
+	for i := 0; i < 100000; i++ {
 		fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, syscall.IPPROTO_TCP)
 		if err != nil {
 			log.Fatal(os.NewSyscallError("socket", err))
@@ -43,7 +42,7 @@ func main() {
 		}
 
 		// close
-		log.Printf("gID: %d, i: %d, bytes written: %d", getGoroutineID(), i, n)
+		log.Printf("i: %d, bytes written: %d", i, n)
 		err = f.Close()
 		if err != nil {
 			log.Fatal(err)
@@ -51,21 +50,9 @@ func main() {
 	}
 }
 
-func getGoroutineID() uint64 {
-	buf := make([]byte, 64)
-	n := runtime.Stack(buf, false)
-	buf = buf[:n]
-	// The format will look like "goroutine 1234 [running]:"
-	var id uint64
-	fmt.Sscanf(string(buf), "goroutine %d ", &id)
-	return id
-}
-
 // code taken from go net package and modified according to our needs
 func connect(ctx context.Context, fd int, ra syscall.Sockaddr) (f *os.File, ret error) {
-	log.Printf("gId: %d, func c.connect", getGoroutineID())
 	err := syscall.Connect(fd, ra)
-	log.Printf("gId: %d, rawConnect returned: %d", getGoroutineID(), err)
 	switch err {
 	case syscall.EINPROGRESS, syscall.EALREADY, syscall.EINTR:
 	case nil, syscall.EISCONN:
@@ -139,7 +126,7 @@ func connect(ctx context.Context, fd int, ra syscall.Sockaddr) (f *os.File, ret 
 	}
 
 	for {
-		// Change: The netFD.connect func from go runtime is calling WaitWrite here directly
+		// Change: The netFD.connect func from go runtime is calling waitWrite here directly
 		// from the poll descriptor (fd.pfd.WaitWrite()). This we can not do directly as we don't have
 		// access to this poll descriptor.
 		// Instead, the rawConn.Write function calls internally WaitWrite, and we
@@ -147,17 +134,13 @@ func connect(ctx context.Context, fd int, ra syscall.Sockaddr) (f *os.File, ret 
 		// function should return false the first time and true afterward.
 		// See the os.rawConn.Write function for details.
 		dummyFuncCalled := false
-		log.Printf("gId: %d, WaitWrite enter...", getGoroutineID())
 		doErr := rc.Write(func(fd uintptr) bool {
 			if !dummyFuncCalled {
 				dummyFuncCalled = true
-				log.Printf("gId: %d, WaitWrite dummyFuncCalled returning false", getGoroutineID())
 				return false // first time only causing the call to WaitWrite
 			}
-			log.Printf("gId: %d, WaitWrite dummyFuncCalled returning true", getGoroutineID())
 			return true // causing exit from pfd.RawWrite
 		})
-		log.Printf("gId: %d, WaitWrite exit, doErr: %v", getGoroutineID(), doErr)
 		if doErr != nil {
 			_ = f.Close()
 			select {
@@ -178,7 +161,6 @@ func connect(ctx context.Context, fd int, ra syscall.Sockaddr) (f *os.File, ret 
 		// details.
 		nerr, err := syscall.GetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_ERROR)
 		if err != nil {
-			log.Println("get error number error: ", err)
 			_ = f.Close()
 			return nil, os.NewSyscallError("getsockopt", err)
 		}
@@ -192,11 +174,8 @@ func connect(ctx context.Context, fd int, ra syscall.Sockaddr) (f *os.File, ret 
 			// see issues 14548 and 19289. Check that we are
 			// really connected; if not, wait again.
 
-			log.Printf("gId: %d, syscall.Errno is 0, calling rawGetpeername", getGoroutineID())
 			if _, err = syscall.Getpeername(fd); err == nil {
 				return f, nil
-			} else {
-				log.Printf("gId: %d, rawGetpeername error: %v, wait again...", getGoroutineID(), err)
 			}
 
 		default:
