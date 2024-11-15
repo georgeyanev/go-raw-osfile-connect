@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	ln, err := net.Listen("tcp4", "127.0.0.1:33334")
 	if err != nil {
 		panic(err)
