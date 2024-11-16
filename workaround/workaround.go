@@ -131,6 +131,7 @@ func connect(ctx context.Context, fd int, ra syscall.Sockaddr) (f *os.File, ret 
 		if f == nil {
 			return nil, errors.New("os.NewFile returned nil")
 		}
+		return f, nil
 
 	default:
 		log.Printf("1 connect returned error: %v", err)
