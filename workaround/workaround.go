@@ -172,7 +172,7 @@ func connect(ctx context.Context, fd int, ra syscall.Sockaddr) (f *os.File, ret 
 			_ = f.Close()
 			f = nil
 			ret = ctxErr
-		} else {
+		} else if f != nil && ret == nil {
 			f.SetWriteDeadline(noDeadline) // restore the writeDeadline
 		}
 	}()
